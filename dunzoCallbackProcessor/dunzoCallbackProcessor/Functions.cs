@@ -3,9 +3,6 @@ using System.Collections.Generic;
 using System.Configuration;
 using System.Data.SqlClient;
 using System.IO;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
 using Microsoft.Azure.WebJobs;
 using Microsoft.WindowsAzure.Storage;
 using Microsoft.WindowsAzure.Storage.Blob;
@@ -103,6 +100,15 @@ namespace dunzoCallbackProcessor
                     pydukaanIUpdateCallBackStatusForDeliveredPickupComplete(respJson.task_id, respJson.state, 
                         respJson.runner.name, respJson.runner.phone_number, blobFileName);
                 }
+                else if (blobString.Contains("delivered"))
+                {
+                    Delivered_Resp respJson = JsonConvert.DeserializeObject<Delivered_Resp>(blobString);
+                    Console.WriteLine(" Task Id is:  " + respJson.task_id);
+                    Console.WriteLine(" State is:  " + respJson.state);
+                    //Console.WriteLine(" Drop Eta s:  " + respJson.Eta_delivery.dropoff);
+                    pydukaanInsertCallBackStatusIntoSnapShotTable(respJson.task_id);
+                    pydukaanUpdateCallBackForDelivertedState(respJson.task_id, respJson.state,blobFileName);
+                }
                 else if (blobString.Contains("cancelled"))
                 {
                     dunzoCancelOrder respJson = JsonConvert.DeserializeObject<dunzoCancelOrder>(blobString);
@@ -120,6 +126,29 @@ namespace dunzoCallbackProcessor
                 Console.WriteLine(" Something is wrong " + ex.Message);
             }
         }
+
+        public class LocationsOrder_delivered
+        {
+            public object event_timestamp { get; set; }
+            public string state { get; set; }
+            public string reference_id { get; set; }
+            public string type { get; set; }
+        }
+
+        public class Delivered_Resp
+        {
+            public string event_type { get; set; }
+            public string event_id { get; set; }
+            public string task_id { get; set; }
+            public string state { get; set; }
+            public long event_timestamp { get; set; }
+            public int price { get; set; }
+            public double total_time { get; set; }
+            public long request_timestamp { get; set; }
+            public string reference_id { get; set; }
+            public List<LocationsOrder_delivered> LocationsOrder_delivered { get; set; }
+        }
+
 
 
         public class LocationsOrder
@@ -171,6 +200,31 @@ namespace dunzoCallbackProcessor
             catch (Exception ex)
             {
                 Console.WriteLine(" Exception pydukaanUpdateStatusToCancel  " + ex.Message);
+            }
+        }
+        public static void pydukaanUpdateCallBackForDelivertedState(string task_id, string state, string blobFileName)
+        {
+            try
+            {
+                // Connect to Database and Get Max Merchant Id
+                String connectionString = ConfigurationManager.ConnectionStrings["DBConnection"].ConnectionString;
+                string queryJson = "update dunzoStatusTbl set dunzoStatus ='" + state + "', responseFileName = '" + blobFileName + "' where task_id='" + task_id + "'";
+                //Console.WriteLine(queryJson);
+                //opening the connection to Database
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    //executing the sql query 
+                    using (SqlCommand cmd = new SqlCommand(queryJson, con))
+                    {
+                        con.Open();
+                        var reader = cmd.ExecuteReader();
+                    }
+                    con.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(" Exception pydukaanUpdateCallBackForDelivertedState  " + ex.Message);
             }
         }
 
