@@ -71,6 +71,14 @@ namespace dunzoCallbackProcessor
                     pydukaanIUpdateCallBackStatusForQueued(respJson.task_id,respJson.state,respJson.eta.pickup,
                         respJson.eta.dropoff,blobFileName);
 
+                    if (blobString.Contains("runner_cancelled"))
+                    {
+                        // get customer invoice id
+                        int custInvoiceId = pydukaanGetCustomerInvoiceIdFromTaskId(respJson.task_id);
+                        // Update Delivey Boy ID
+                        pydukaanUpdateDeliveryIdToInvoice(custInvoiceId, 0);
+                    }
+
                 }
                 else if (blobString.Contains("runner_accepted") || blobString.Contains("reached_for_pickup"))
                 {
@@ -85,6 +93,20 @@ namespace dunzoCallbackProcessor
                     pydukaanIUpdateCallBackStatusForRunnerAccepted(respJson.task_id, respJson.state, respJson.eta.pickup, 
                         respJson.eta.dropoff, respJson.runner.name, respJson.runner.phone_number,blobFileName);
 
+                    if (blobString.Contains("runner_accepted"))
+                    {
+                        // Insert Runner Details in Merchant_StaffDetails 
+                        pydukaanInsertDunzoRunnerEntry(respJson.runner.name+"__"+ respJson.runner.phone_number, respJson.runner.phone_number);
+                        // Get Delivery Boy Id
+                        int deliveryBoydId = pydukaanGetDeliveryBoyId(respJson.runner.name + "__" + respJson.runner.phone_number, respJson.runner.phone_number);
+
+                        // get customer invoice id
+                        int custInvoiceId = pydukaanGetCustomerInvoiceIdFromTaskId(respJson.task_id);
+
+                        // Update Delivey Boy ID
+                        pydukaanUpdateDeliveryIdToInvoice(custInvoiceId, deliveryBoydId);
+
+                    }
                 }
 
                 else if (blobString.Contains("pickup_complete") || blobString.Contains("started_for_delivery") ||
@@ -125,6 +147,131 @@ namespace dunzoCallbackProcessor
             {
                 Console.WriteLine(" Something is wrong " + ex.Message);
             }
+        }
+
+
+
+        public static void pydukaanUpdateDeliveryIdToInvoice(int customerInvoiceId, int deliveryBoyId)
+        {
+
+            try
+            {
+                // Connect to Database and Get Max Merchant Id
+                String connectionString = ConfigurationManager.ConnectionStrings["DBConnection"].ConnectionString;
+                string queryJson = "update customerinvoice set Deliveryboy_id =" + deliveryBoyId + "  where customerInvoiceId=" + customerInvoiceId;
+                //Console.WriteLine(queryJson);
+                //opening the connection to Database
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    //executing the sql query 
+                    using (SqlCommand cmd = new SqlCommand(queryJson, con))
+                    {
+                        con.Open();
+                        var reader = cmd.ExecuteReader();
+                    }
+                    con.Close();
+
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(" Exception pydukaanUpdateStatusToCancel  " + ex.Message);
+            }
+        }
+
+        public static int pydukaanGetCustomerInvoiceIdFromTaskId(string taskId)
+        {
+            int customerinvoiceid = 0;
+            try
+            {
+                // Connect to Database and Get Max Merchant Id
+                String connectionString = ConfigurationManager.ConnectionStrings["DBConnection"].ConnectionString;
+                string queryJson = "SELECT top(1) customerinvoiceid custInvoiceId from dunzoStatusTbl  where task_id='" + taskId + "' order by IDDunzo desc";
+                //opening the connection to Database
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    //executing the sql query 
+                    using (SqlCommand cmd = new SqlCommand(queryJson, con))
+                    {
+                        con.Open();
+                        var reader = cmd.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            customerinvoiceid = (int.Parse(reader["custInvoiceId"].ToString()));
+                        }
+                    }
+                    con.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(" Could Not Get customerinvoiceid Id. Expection Message is " + ex.Message);
+            }
+            return customerinvoiceid;
+        }
+
+        public static int pydukaanGetDeliveryBoyId(string runnerName,string runnerPhoneNum)
+        {
+            int deliveryBoyId = 0;
+            try
+            {
+                // Connect to Database and Get Max Merchant Id
+                String connectionString = ConfigurationManager.ConnectionStrings["DBConnection"].ConnectionString;
+                string queryJson = "SELECT top(1) ID deliveryID from Merchants_StaffTable  where name='" + runnerName + "' and phonenumber='" + runnerPhoneNum + "' and merchantbranchid=0 order by ID desc";
+                //opening the connection to Database
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    //executing the sql query 
+                    using (SqlCommand cmd = new SqlCommand(queryJson, con))
+                    {
+                        con.Open();
+                        var reader = cmd.ExecuteReader();
+                        while (reader.Read())
+                        {
+                            deliveryBoyId = (int.Parse(reader["deliveryID"].ToString()));
+                        }
+                    }
+                    con.Close();
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(" Could Not Get Merchant Id. Expection Message is " + ex.Message);
+            }
+            return deliveryBoyId;
+        }
+
+        public static void pydukaanInsertDunzoRunnerEntry(string runnerName, string runnerPhoneNum)
+        {
+
+            try
+            {
+                // Connect to Database and Get Max Merchant Id
+                String connectionString = ConfigurationManager.ConnectionStrings["DBConnection"].ConnectionString;
+                string queryJson = "INSERT INTO [dbo].[Merchants_StaffTable] " +
+                    " ([MerchantBranchId], [Name],[PhoneNumber] ,[CreatedDate],[ModifiedDate],[IsActive],[Role])" +
+                    " VALUES(0," + "'" + runnerName + "'," + "'" + runnerPhoneNum + "'," + "getdate(), getdate(), 'Yes', 'DeliveryBoy')";
+
+
+                //Console.WriteLine(queryJson);
+                //opening the connection to Database
+                using (SqlConnection con = new SqlConnection(connectionString))
+                {
+                    //executing the sql query 
+                    using (SqlCommand cmd = new SqlCommand(queryJson, con))
+                    {
+                        con.Open();
+                        var reader = cmd.ExecuteReader();
+                    }
+                    con.Close();
+
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine(" Exception pydukaanInsertDunzoRunnerEntry  " + ex.Message);
+            }
+
         }
 
         public class LocationsOrder_delivered
@@ -327,8 +474,6 @@ namespace dunzoCallbackProcessor
             }
 
         }
-
-
 
 
         public static void pydukaanInsertCallBackStatusIntoSnapShotTable( string task_id)
